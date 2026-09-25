@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Trust Gateway</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <h1>Agent Trust Gateway</h1>
+        <p class="muted small">Merchant console · <span id="merchant-name">DemoShop</span></p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="badge badge-warn" title="Risk-scoring and authorisation prototype. Not production-grade bot detection.">Demo prototype</span>
+      <span class="muted small mono" id="key-id" title="Ed25519 signing key ID"></span>
+      <a class="link small" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div>
+        <h2>Tell humans, authorised agents and suspicious bots apart, and explain why.</h2>
+        <p class="muted">Every request is checked against a signed, short-lived agent credential and scored by a deterministic risk engine. Legitimate agents get through. Everything else is challenged or blocked, with a reason for each decision.</p>
+      </div>
+      <div class="lanes">
+        <div class="lane"><span class="dot dot-human"></span><div><strong>Human</strong><span class="muted small">no credential, normal browser</span></div><span class="chip chip-allow">allow</span></div>
+        <div class="lane"><span class="dot dot-agent"></span><div><strong>Authorised agent</strong><span class="muted small">valid signed credential in scope</span></div><span class="chip chip-allow">allow</span></div>
+        <div class="lane"><span class="dot dot-bad"></span><div><strong>Suspicious automation</strong><span class="muted small">bad credential or behaviour</span></div><span class="chip chip-block">review / block</span></div>
+      </div>
+    </section>
+
+    <section class="cards" id="cards" aria-label="Overview">
+      <div class="card stat"><span class="stat-label">Total requests</span><span class="stat-value" data-k="total_requests">–</span></div>
+      <div class="card stat stat-allow"><span class="stat-label">Allowed</span><span class="stat-value" data-k="allowed">–</span></div>
+      <div class="card stat stat-review"><span class="stat-label">Review</span><span class="stat-value" data-k="review">–</span></div>
+      <div class="card stat stat-block"><span class="stat-label">Blocked</span><span class="stat-value" data-k="blocked">–</span></div>
+      <div class="card stat"><span class="stat-label">Revoked credentials</span><span class="stat-value" data-k="revoked_credentials">–</span><span class="stat-sub"><span data-k="active_credentials">–</span> active</span></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h3>One-click demo scenarios</h3>
+          <p class="muted small">Each scenario sends real requests through <code>/api/gateway/evaluate</code>.</p>
+        </div>
+      </div>
+      <div class="scenarios" id="scenarios"></div>
+      <div id="scenario-result" class="result hidden" aria-live="polite"></div>
+    </section>
+
+    <div class="grid-2">
+      <section class="card">
+        <div class="card-head"><h3>Authorise an agent</h3><span class="muted small">User grants → gateway issues credential</span></div>
+        <form id="auth-form" class="form">
+          <label>User
+            <div class="row">
+              <select name="user_id" id="user-select" required></select>
+              <button type="button" class="btn btn-ghost" id="new-user-btn" title="Create user">+ New</button>
+            </div>
+          </label>
+          <div id="new-user" class="inline-form hidden">
+            <input id="new-user-name" placeholder="Full name" maxlength="120" />
+            <input id="new-user-email" placeholder="email (optional)" maxlength="254" />
+            <button type="button" class="btn" id="create-user-btn">Create</button>
+          </div>
+          <div class="row">
+            <label class="grow">Merchant<select name="merchant_id" id="merchant-select" required></select></label>
+            <label class="grow">Agent<select name="agent_id" id="agent-select" required></select></label>
+          </div>
+          <fieldset>
+            <legend>Scopes</legend>
+            <label class="check"><input type="checkbox" name="scopes" value="browse" checked /> browse</label>
+            <label class="check"><input type="checkbox" name="scopes" value="search" checked /> search</label>
+            <label class="check"><input type="checkbox" name="scopes" value="purchase" /> purchase</label>
+          </fieldset>
+          <label>Credential lifetime
+            <select name="ttl_seconds">
+              <option value="60">1 minute</option>
+              <option value="300">5 minutes</option>
+              <option value="900" selected>15 minutes</option>
+              <option value="3600">1 hour</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" type="submit">Authorise &amp; issue credential</button>
+        </form>
+        <div id="issued" class="issued hidden"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h3>Simulate a request</h3><span class="muted small">Send as a human, an agent or a bot</span></div>
+        <form id="sim-form" class="form">
+          <label>Credential
+            <select id="sim-cred-select">
+              <option value="">None (no credential)</option>
+            </select>
+          </label>
+          <textarea id="sim-token" name="credential" rows="2" placeholder="…or paste a credential token (atg1.…)" spellcheck="false"></textarea>
+          <div class="row">
+            <label class="grow">Action
+              <select name="action"><option>browse</option><option selected>search</option><option>purchase</option></select>
+            </label>
+            <label class="grow">IP address<input name="ip_address" value="203.0.113.10" required /></label>
+          </div>
+          <div class="row">
+            <label class="grow">User ID<input name="user_id" id="sim-user" placeholder="usr_…" /></label>
+            <label class="grow">Agent ID<input name="agent_id" id="sim-agent" placeholder="agt_…" /></label>
+          </div>
+          <label>User-agent
+            <div class="row">
+              <select id="ua-preset" class="shrink">
+                <option value="agent">Agent</option>
+                <option value="browser">Browser</option>
+                <option value="scraper">Scraper</option>
+              </select>
+              <input name="user_agent" id="sim-ua" class="grow" />
+            </div>
+          </label>
+          <label class="check"><input type="checkbox" name="declared_agent" id="sim-declared" checked /> Declares itself as an AI agent</label>
+          <div class="row">
+            <button class="btn btn-primary" type="submit">Send request</button>
+            <label class="check small muted">Repeat <input type="number" id="sim-repeat" value="1" min="1" max="50" class="num" /> times</label>
+          </div>
+        </form>
+        <div id="sim-result" class="result hidden" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Credentials</h3>
+        <div class="seg" id="cred-filter">
+          <button data-v="" class="active">All</button><button data-v="active">Active</button><button data-v="expired">Expired</button><button data-v="revoked">Revoked</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Credential</th><th>User</th><th>Agent</th><th>Scopes</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+          <tbody id="cred-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="grid-events">
+      <section class="card">
+        <div class="card-head">
+          <h3>Recent events</h3>
+          <div class="seg" id="event-filter">
+            <button data-v="" class="active">All</button><button data-v="allow">Allow</button><button data-v="review">Review</button><button data-v="block">Block</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="clickable">
+            <thead><tr><th>Time</th><th>Source</th><th>Action</th><th>Traffic class</th><th>Score</th><th>Decision</th></tr></thead>
+            <tbody id="event-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <aside class="card detail" id="detail">
+        <div class="empty muted">Select an event to see its risk breakdown.</div>
+      </aside>
+    </div>
+
+    <footer class="muted small">
+      Demo-only prototype: deterministic scoring, a local Ed25519 demo key, SQLite storage. It does not provide production bot detection.
+    </footer>
+  </main>
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

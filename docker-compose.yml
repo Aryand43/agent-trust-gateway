@@ -1,0 +1,18 @@
+services:
+  gateway:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ATG_LOG_LEVEL: INFO
+      ATG_CREDENTIAL_TTL_SECONDS: "900"
+    volumes:
+      - atg-data:/data   # SQLite DB + demo signing key (demo only)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  atg-data:
